@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQLite Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%233ecf8e'/><text y='24' x='4' font-size='22'>🗄</text></svg>" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ─── Sidebar ─────────────────────────────────── -->
+  <aside id="sidebar" aria-label="Database navigator">
+
+    <div id="sidebar-header">
+      <div class="logo" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="8" cy="4" rx="6" ry="2.5" fill="white" opacity=".9"/>
+          <path d="M2 4v4c0 1.38 2.69 2.5 6 2.5S14 9.38 14 8V4" stroke="white" stroke-width="1.2" fill="none" opacity=".9"/>
+          <path d="M2 8v4c0 1.38 2.69 2.5 6 2.5S14 13.38 14 12V8" stroke="white" stroke-width="1.2" fill="none" opacity=".9"/>
+        </svg>
+      </div>
+      <span class="brand">SQLite Dashboard</span>
+    </div>
+
+    <div id="db-selector-wrap">
+      <select id="db-selector" aria-label="Select database"></select>
+    </div>
+
+    <div id="table-search-wrap">
+      <input id="table-search" type="search" placeholder="Search tables…" aria-label="Search tables" autocomplete="off" />
+    </div>
+
+    <nav id="table-list" aria-label="Table list"></nav>
+
+  </aside>
+
+  <!-- ─── Main content ─────────────────────────────── -->
+  <div id="main">
+
+    <!-- Top bar -->
+    <header id="topbar">
+      <div id="breadcrumb" aria-label="Current location">sqlite-dashboard</div>
+
+      <div id="tab-bar" role="tablist" style="visibility:hidden">
+        <button class="tab-btn active" role="tab" data-tab="data">Data</button>
+        <button class="tab-btn"        role="tab" data-tab="insert">Insert</button>
+        <button class="tab-btn"        role="tab" data-tab="schema">Schema</button>
+        <button class="tab-btn"        role="tab" data-tab="sql">SQL Editor</button>
+      </div>
+    </header>
+
+    <!-- Welcome screen (shown when no table is selected) -->
+    <div id="welcome" role="main">
+      <div class="welcome-icon" aria-hidden="true">🗄️</div>
+      <h2>Welcome to SQLite Dashboard</h2>
+      <p>Select a table from the sidebar to get started.</p>
+    </div>
+
+    <!-- Panels (shown when a table is selected) -->
+    <div id="content" style="display:none">
+
+      <!-- ── Data panel ─────────────────────────────── -->
+      <div id="data-panel" class="panel active" role="tabpanel">
+        <div class="toolbar">
+          <input
+            id="row-search"
+            class="search-input"
+            type="search"
+            placeholder="Search rows…"
+            aria-label="Search rows"
+            autocomplete="off"
+          />
+          <div class="toolbar-spacer"></div>
+          <button id="btn-refresh" class="btn btn-secondary btn-sm" title="Refresh">↺ Refresh</button>
+        </div>
+        <div id="table-scroll" role="region" aria-label="Table data"></div>
+        <div id="pagination-bar" style="display:none">
+          <span id="page-info" class="page-info"></span>
+          <div class="toolbar-spacer"></div>
+          <label for="page-size-select" style="font-size:12px;color:var(--color-text-muted)">Rows per page:</label>
+          <select id="page-size-select" aria-label="Rows per page">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+          <button id="btn-prev-page" class="btn btn-secondary btn-sm" aria-label="Previous page">‹ Prev</button>
+          <button id="btn-next-page" class="btn btn-secondary btn-sm" aria-label="Next page">Next ›</button>
+        </div>
+      </div>
+
+      <!-- ── Insert panel ────────────────────────────── -->
+      <div id="insert-panel" class="panel" role="tabpanel"></div>
+
+      <!-- ── Schema panel ────────────────────────────── -->
+      <div id="schema-panel" class="panel" role="tabpanel"></div>
+
+      <!-- ── SQL editor panel ───────────────────────── -->
+      <div id="sql-panel" class="panel" role="tabpanel">
+        <div id="sql-editor-wrap">
+          <div id="sql-editor-toolbar">
+            <span id="sql-editor-label">SQL Editor</span>
+            <button id="sql-run-btn" class="btn btn-primary btn-sm">▶ Run</button>
+          </div>
+          <textarea
+            id="sql-textarea"
+            spellcheck="false"
+            autocorrect="off"
+            autocapitalize="off"
+            placeholder="SELECT * FROM your_table LIMIT 100;"
+            aria-label="SQL query editor"
+          ></textarea>
+          <div id="sql-hint">Press <kbd>Ctrl+Enter</kbd> / <kbd>⌘+Enter</kbd> to run</div>
+        </div>
+        <div id="sql-results" aria-live="polite" aria-label="Query results"></div>
+      </div>
+
+    </div><!-- /#content -->
+  </div><!-- /#main -->
+</div><!-- /#app -->
+
+<div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

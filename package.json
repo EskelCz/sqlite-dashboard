@@ -1,0 +1,26 @@
+{
+  "name": "sqlite-dashboard",
+  "version": "0.1.0",
+  "description": "Web based sqlite viewer and editor for self-hosting",
+  "main": "src/index.js",
+  "bin": {
+    "sqlite-dashboard": "bin/sqlite-dashboard.js"
+  },
+  "scripts": {
+    "start": "node bin/sqlite-dashboard.js",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "keywords": [
+    "sqlite",
+    "dashboard",
+    "database",
+    "viewer",
+    "editor"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {}
+}
