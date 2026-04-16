@@ -415,20 +415,33 @@ table#data-table td {
 }
 
 table#data-table tr:hover td { background: var(--color-table-row-hover); }
-table#data-table tr.editing td { background: var(--color-table-row-editing); }
+table#data-table tr:hover td.td-selected { background: #dcfce7; }
+
+.td-data { cursor: default; }
+
+table#data-table td.td-selected {
+  background: #dcfce7;
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+table#data-table td.cell-editing {
+  padding: 4px 8px;
+  white-space: normal;
+  background: #fff;
+}
 
 .td-null { color: var(--color-text-muted); font-style: italic; font-size: 12px; }
 .td-number { color: #1d6ed8; font-family: var(--font-mono); font-size: 12px; }
 .td-text { color: var(--color-text); }
 
 .td-actions {
-  width: 80px;
-  min-width: 80px;
+  width: 48px;
+  min-width: 48px;
   padding: 3px 8px !important;
   white-space: nowrap;
 }
 
-.row-edit-btn, .row-delete-btn, .row-save-btn, .row-cancel-btn {
+.row-delete-btn {
   padding: 2px 7px;
   font-size: 11px;
   border-radius: 4px;
@@ -438,23 +451,24 @@ table#data-table tr.editing td { background: var(--color-table-row-editing); }
   font-family: var(--font);
   transition: all .12s;
 }
-.row-edit-btn:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-.row-save-btn { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-.row-save-btn:hover { background: var(--color-primary-hover); }
-.row-cancel-btn:hover { background: var(--color-bg); }
 .row-delete-btn { color: var(--color-danger); }
 .row-delete-btn:hover { background: var(--color-danger); color: #fff; border-color: var(--color-danger); }
 
-.inline-edit-input {
+.inline-cell-input, .inline-cell-select, .inline-cell-textarea {
   width: 100%;
-  min-width: 80px;
-  padding: 2px 6px;
+  min-width: 70px;
+  padding: 4px 6px;
   border: 1px solid var(--color-input-focus);
   border-radius: 4px;
   font-size: 12px;
   font-family: var(--font);
   outline: none;
   background: #fff;
+}
+
+.inline-cell-textarea {
+  resize: vertical;
+  min-height: 88px;
 }
 
 /* ─── Pagination ──────────────────────────────────────────── */

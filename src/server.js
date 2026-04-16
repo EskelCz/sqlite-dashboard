@@ -3,6 +3,7 @@
 const express = require('express');
 const path = require('path');
 const { DatabaseManager } = require('./db');
+const { resolveDatabases } = require('./config');
 const databasesRouter = require('./api/databases');
 const tablesRouter = require('./api/tables');
 
@@ -13,10 +14,10 @@ const tablesRouter = require('./api/tables');
  * @returns {import('express').Application}
  */
 function createApp(config) {
-  const databases = config.databases || [];
+  const databases = resolveDatabases(config);
   if (!Array.isArray(databases) || databases.length === 0) {
     throw new Error(
-      'config.databases must be a non-empty array of {name, path} objects'
+      'config.databases must be a non-empty array of {name, path} objects or config.directory must contain SQLite files'
     );
   }
 

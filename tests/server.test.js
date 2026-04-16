@@ -12,10 +12,16 @@ const { createApp } = require('../src/server');
 // ─── Test database setup ───────────────────────────────────────────────────────
 let tmpDir;
 let dbPath;
+let nestedDbPath;
+let sqlitePath;
 
 before(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlite-dashboard-test-'));
   dbPath = path.join(tmpDir, 'test.db');
+  nestedDbPath = path.join(tmpDir, 'nested', 'test.db');
+  sqlitePath = path.join(tmpDir, 'nested', 'analytics.sqlite');
+
+  fs.mkdirSync(path.dirname(nestedDbPath), { recursive: true });
 
   const db = new Database(dbPath);
   db.exec(`
@@ -38,6 +44,14 @@ before(() => {
     CREATE VIEW active_users AS SELECT * FROM users WHERE age > 20;
   `);
   db.close();
+
+  const nestedDb = new Database(nestedDbPath);
+  nestedDb.exec('CREATE TABLE metrics (id INTEGER PRIMARY KEY, value TEXT);');
+  nestedDb.close();
+
+  const sqliteDb = new Database(sqlitePath);
+  sqliteDb.exec('CREATE TABLE events (id INTEGER PRIMARY KEY, name TEXT);');
+  sqliteDb.close();
 });
 
 after(() => {
@@ -230,4 +244,32 @@ test('createApp throws if no databases configured', () => {
     () => createApp({ databases: [] }),
     /non-empty array/
   );
+});
+
+test('createApp discovers sqlite files from a directory recursively', () => {
+  const app = createApp({ directory: tmpDir });
+  const names = app.locals.dbManager.getDatabaseNames();
+
+  assert.deepEqual(names, ['analytics', 'nested - test', 'test']);
+  app.locals.dbManager.closeAll();
+});
+
+test('createApp supports folder alias for directory scans', () => {
+  const app = createApp({ folder: tmpDir });
+  const names = app.locals.dbManager.getDatabaseNames();
+
+  assert.ok(names.includes('analytics'));
+  assert.ok(names.includes('test'));
+  app.locals.dbManager.closeAll();
+});
+
+test('createApp throws when a directory has no sqlite files', () => {
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlite-dashboard-empty-'));
+
+  assert.throws(
+    () => createApp({ directory: emptyDir }),
+    /No \.db or \.sqlite files found/
+  );
+
+  fs.rmSync(emptyDir, { recursive: true, force: true });
 });

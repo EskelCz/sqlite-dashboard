@@ -21,17 +21,14 @@ Projects can install this library, point it at one or more SQLite files, and imm
 ### As a library
 
 ```bash
-npm install sqlite-dashboard
+npm install sqlite-dashboard --save-dev
 ```
 
 ```js
 const { createDashboard } = require('sqlite-dashboard');
 
 createDashboard({
-  databases: [
-    { name: 'My App',    path: './data/app.db' },
-    { name: 'Analytics', path: './data/analytics.db' },
-  ],
+  directory: './data',
   port: 3000,           // optional, default 3000
   host: '127.0.0.1',   // optional, default 127.0.0.1 (localhost only)
 });
@@ -46,6 +43,9 @@ npx sqlite-dashboard ./path/to/my.db
 # Multiple files with custom names
 npx sqlite-dashboard --name "Production" ./prod.db --name "Dev" ./dev.db
 
+# Scan a folder recursively for .db and .sqlite files
+npx sqlite-dashboard --dir ./data
+
 # Custom port
 npx sqlite-dashboard --port 4000 ./app.db
 ```
@@ -59,8 +59,12 @@ Starts the HTTP server and returns `{ app, server, close }`.
 | Option              | Type                              | Default       | Description                         |
 |---------------------|-----------------------------------|---------------|-------------------------------------|
 | `config.databases`  | `Array<{name: string, path: string}>` | **required** | SQLite files to expose             |
+| `config.directory`  | `string`                          |               | Folder to scan recursively for `.db` and `.sqlite` files |
+| `config.folder`     | `string`                          |               | Alias for `config.directory`       |
 | `config.port`       | `number`                          | `3000`        | Port to listen on                   |
 | `config.host`       | `string`                          | `'127.0.0.1'` | Bind address                        |
+
+You can pass `config.databases`, `config.directory`, or both. Files discovered from the directory are added automatically.
 
 ### `createApp(config)`
 
@@ -92,7 +96,3 @@ npm test
 
 > **Security note:** The SQL Editor allows running arbitrary SQL against your databases.
 > The server binds to `127.0.0.1` by default; do not expose it to the public internet without authentication.
-
-## License
-
-MIT

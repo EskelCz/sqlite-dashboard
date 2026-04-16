@@ -21,6 +21,8 @@ const state = {
   sortBy: null,
   sortOrder: 'ASC',
   search: '',
+  selectedCell: null,
+  editingCell: null,
 
   // Schema panel
   schema: null,
@@ -120,6 +122,103 @@ function formatCellValue(val) {
   if (typeof val === 'number') return `<span class="td-number">${escHtml(String(val))}</span>`;
   const str = String(val);
   return `<span class="td-text">${escHtml(str.length > 120 ? str.slice(0, 120) + '…' : str)}</span>`;
+}
+
+function escSelector(str) {
+  return String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function getCellElement(rowid, col) {
+  const table = document.getElementById('data-table');
+  if (!table) return null;
+  const row = table.querySelector(`tbody tr[data-rowid="${escSelector(rowid)}"]`);
+  if (!row) return null;
+  return row.querySelector(`td[data-col="${escSelector(col)}"]`);
+}
+
+function getSchemaColumn(col) {
+  return state.schema?.columns?.find((c) => c.name === col) || null;
+}
+
+function getSchemaType(col) {
+  return (getSchemaColumn(col)?.type || '').toUpperCase();
+}
+
+function isBooleanColumn(col, val) {
+  return typeof val === 'boolean' || /BOOL/.test(getSchemaType(col));
+}
+
+function isNumberColumn(col, val) {
+  return typeof val === 'number' || /(INT|REAL|FLOA|DOUB|NUM|DEC)/.test(getSchemaType(col));
+}
+
+function updateCellSelection() {
+  const table = document.getElementById('data-table');
+  if (!table) return;
+  table.querySelectorAll('td.td-selected').forEach((td) => td.classList.remove('td-selected'));
+  if (!state.selectedCell) return;
+  const td = getCellElement(state.selectedCell.rowid, state.selectedCell.col);
+  if (td) td.classList.add('td-selected');
+}
+
+function selectCell(td) {
+  const row = td?.closest('tr');
+  if (!row || !td.dataset.col) return;
+  state.selectedCell = { rowid: row.dataset.rowid, col: td.dataset.col };
+  updateCellSelection();
+}
+
+function buildCellEditor(col, val) {
+  if (isBooleanColumn(col, val)) {
+    const select = document.createElement('select');
+    const allowNull = getSchemaColumn(col)?.notnull !== 1;
+    select.className = 'inline-cell-select';
+    if (allowNull) select.add(new Option('NULL', ''));
+    select.add(new Option('true', '1'));
+    select.add(new Option('false', '0'));
+    const normalized =
+      val === null || val === undefined
+        ? ''
+        : val === true || val === 1 || String(val).toLowerCase() === 'true'
+          ? '1'
+          : '0';
+    select.value = normalized;
+    return { input: select, kind: 'boolean' };
+  }
+
+  if (isNumberColumn(col, val)) {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = /INT/.test(getSchemaType(col)) ? '1' : 'any';
+    input.className = 'inline-cell-input';
+    input.value = val === null || val === undefined ? '' : String(val);
+    return { input, kind: 'number' };
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'inline-cell-textarea';
+  textarea.rows = 5;
+  textarea.value = val === null || val === undefined ? '' : String(val);
+  return { input: textarea, kind: 'string' };
+}
+
+function parseEditorValue(col, kind, input) {
+  const raw = input.value;
+
+  if (kind === 'boolean') {
+    if (raw === '') return null;
+    return raw === '1' ? 1 : 0;
+  }
+
+  if (kind === 'number') {
+    if (raw.trim() === '') return null;
+    const isInt = /INT/.test(getSchemaType(col));
+    const parsed = isInt ? parseInt(raw, 10) : Number(raw);
+    if (Number.isNaN(parsed)) throw new Error('Please enter a valid number');
+    return parsed;
+  }
+
+  return raw;
 }
 
 // ─── Sidebar: database selector ────────────────────────────────────────────────
@@ -295,6 +394,8 @@ async function loadRows() {
 
 function renderTable(rows) {
   const tableScroll = document.getElementById('table-scroll');
+  state.selectedCell = null;
+  state.editingCell = null;
 
   if (rows.length === 0 && !state.search) {
     tableScroll.innerHTML = '<div class="empty-state"><span class="empty-icon">📭</span><p>This table has no rows</p><p style="font-size:12px">Use the Insert tab to add data</p></div>';
@@ -344,10 +445,13 @@ function renderTable(rows) {
     });
   });
 
-  // Edit / delete button handlers
-  tableScroll.querySelectorAll('.row-edit-btn').forEach((btn) => {
-    btn.addEventListener('click', () => startRowEdit(btn.closest('tr')));
+  // Cell click/double-click handlers
+  tableScroll.querySelectorAll('tbody td[data-col]').forEach((td) => {
+    td.addEventListener('click', () => selectCell(td));
+    td.addEventListener('dblclick', () => startCellEdit(td));
   });
+
+  // Delete button handlers
   tableScroll.querySelectorAll('.row-delete-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const rowid = btn.dataset.rowid;
@@ -364,47 +468,100 @@ function renderDataRow(row, cols) {
   const rowid = row._rowid_;
   return `<tr data-rowid="${escHtml(String(rowid))}">
     <td class="td-actions">
-      <button class="row-edit-btn btn-sm" title="Edit">✏️</button>
       <button class="row-delete-btn btn-sm" data-rowid="${escHtml(String(rowid))}" title="Delete">🗑️</button>
     </td>
-    ${cols.map((c) => `<td data-col="${escHtml(c)}" data-val="${escHtml(String(row[c]))}">${formatCellValue(row[c])}</td>`).join('')}
+    ${cols.map((c) => `<td class="td-data" data-col="${escHtml(c)}">${formatCellValue(row[c])}</td>`).join('')}
   </tr>`;
 }
 
-// ─── Row editing ───────────────────────────────────────────────────────────────
-function startRowEdit(tr) {
-  tr.classList.add('editing');
+// ─── Cell editing ──────────────────────────────────────────────────────────────
+function startCellEdit(td) {
+  const tr = td?.closest('tr');
+  const col = td?.dataset.col;
+  if (!tr || !col || td.classList.contains('cell-editing')) return;
   const rowid = tr.dataset.rowid;
-  const cols = state.columns;
+  const row = state.rows.find((r) => String(r._rowid_) === String(rowid));
+  if (!row) return;
+  const original = row[col];
+  const { input, kind } = buildCellEditor(col, original);
 
-  // Replace action cell
-  tr.cells[0].innerHTML = `
-    <button class="row-save-btn btn-sm" title="Save">💾</button>
-    <button class="row-cancel-btn btn-sm" title="Cancel">✕</button>`;
+  state.editingCell = { rowid, col };
+  state.selectedCell = { rowid, col };
+  td.classList.add('cell-editing');
+  td.replaceChildren(input);
+  updateCellSelection();
 
-  // Replace data cells with inputs
-  cols.forEach((col, i) => {
-    const td = tr.cells[i + 1];
-    const rawVal = td.dataset.val === 'null' ? '' : td.dataset.val;
-    td.innerHTML = `<input class="inline-edit-input" value="${escHtml(rawVal)}" data-col="${escHtml(col)}" />`;
+  let done = false;
+  let saving = false;
+  const finish = async (save) => {
+    if (done || saving) return;
+
+    if (!save) {
+      done = true;
+      state.editingCell = null;
+      td.classList.remove('cell-editing');
+      td.innerHTML = formatCellValue(original);
+      updateCellSelection();
+      return;
+    }
+
+    let next;
+    try {
+      next = parseEditorValue(col, kind, input);
+    } catch (err) {
+      toast(err.message, 'error');
+      input.focus();
+      return;
+    }
+
+    const unchanged = next === original || (kind === 'string' && original === null && next === '');
+    if (unchanged) {
+      done = true;
+      state.editingCell = null;
+      td.classList.remove('cell-editing');
+      td.innerHTML = formatCellValue(original);
+      updateCellSelection();
+      return;
+    }
+
+    saving = true;
+    try {
+      await api.updateRow(state.currentDb, state.currentTable, rowid, { [col]: next });
+      row[col] = next;
+      done = true;
+      state.editingCell = null;
+      td.classList.remove('cell-editing');
+      td.innerHTML = formatCellValue(next);
+      updateCellSelection();
+      toast('Cell updated', 'success');
+    } catch (err) {
+      saving = false;
+      toast('Error: ' + err.message, 'error');
+      input.focus();
+    }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(false);
+      return;
+    }
+    if (kind === 'string') {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        finish(true);
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finish(true);
+    }
   });
 
-  tr.querySelector('.row-save-btn').addEventListener('click', () => saveRowEdit(tr, rowid));
-  tr.querySelector('.row-cancel-btn').addEventListener('click', () => loadRows());
-}
-
-async function saveRowEdit(tr, rowid) {
-  const data = {};
-  tr.querySelectorAll('.inline-edit-input').forEach((input) => {
-    data[input.dataset.col] = input.value === '' ? null : input.value;
-  });
-  try {
-    await api.updateRow(state.currentDb, state.currentTable, rowid, data);
-    toast('Row updated', 'success');
-    loadRows();
-  } catch (err) {
-    toast('Error: ' + err.message, 'error');
-  }
+  input.addEventListener('blur', () => finish(true));
+  requestAnimationFrame(() => input.focus());
 }
 
 async function deleteRow(rowid) {
