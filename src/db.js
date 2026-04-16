@@ -47,8 +47,8 @@ class DatabaseManager {
         throw new Error(`Database "${name}" is not configured`);
       }
       const db = new Database(config.path, { readonly: false });
-      // Enable WAL mode for better concurrent read performance
-      db.pragma('journal_mode = WAL');
+      // Prefer clean filesystem state over WAL sidecar files (-wal/-shm)
+      db.pragma('journal_mode = DELETE');
       db.pragma('foreign_keys = ON');
       this._connections.set(name, db);
     }
