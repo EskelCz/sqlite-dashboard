@@ -27,6 +27,7 @@ function findSqliteFiles(directoryPath) {
   const files = [];
   /** @type {string[]} */
   const pending = [rootPath];
+  const visitedDirectories = new Set([fs.realpathSync(rootPath)]);
 
   while (pending.length > 0) {
     const currentPath = pending.pop();
@@ -34,11 +35,33 @@ function findSqliteFiles(directoryPath) {
 
     for (const entry of entries) {
       const entryPath = path.join(currentPath, entry.name);
-      if (entry.isDirectory()) {
-        pending.push(entryPath);
+      let isDirectory = entry.isDirectory();
+      let isFile = entry.isFile();
+
+      if (entry.isSymbolicLink()) {
+        try {
+          const targetStats = fs.statSync(entryPath);
+          isDirectory = targetStats.isDirectory();
+          isFile = targetStats.isFile();
+        } catch {
+          continue;
+        }
+      }
+
+      if (isDirectory) {
+        try {
+          const realPath = fs.realpathSync(entryPath);
+          if (visitedDirectories.has(realPath)) {
+            continue;
+          }
+          visitedDirectories.add(realPath);
+          pending.push(entryPath);
+        } catch {
+          continue;
+        }
         continue;
       }
-      if (entry.isFile() && SQLITE_FILE_PATTERN.test(entry.name)) {
+      if (isFile && SQLITE_FILE_PATTERN.test(entry.name)) {
         files.push(entryPath);
       }
     }

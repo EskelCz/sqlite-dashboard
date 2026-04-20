@@ -14,12 +14,14 @@ let tmpDir;
 let dbPath;
 let nestedDbPath;
 let sqlitePath;
+let symlinkDbPath;
 
 before(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlite-dashboard-test-'));
   dbPath = path.join(tmpDir, 'test.db');
   nestedDbPath = path.join(tmpDir, 'nested', 'test.db');
   sqlitePath = path.join(tmpDir, 'nested', 'analytics.sqlite');
+  symlinkDbPath = path.join(tmpDir, 'linked-test.db');
 
   fs.mkdirSync(path.dirname(nestedDbPath), { recursive: true });
 
@@ -52,6 +54,12 @@ before(() => {
   const sqliteDb = new Database(sqlitePath);
   sqliteDb.exec('CREATE TABLE events (id INTEGER PRIMARY KEY, name TEXT);');
   sqliteDb.close();
+
+  try {
+    fs.symlinkSync(dbPath, symlinkDbPath);
+  } catch {
+    symlinkDbPath = null;
+  }
 });
 
 after(() => {
@@ -251,6 +259,18 @@ test('createApp discovers sqlite files from a directory recursively', () => {
   const names = app.locals.dbManager.getDatabaseNames();
 
   assert.deepEqual(names, ['analytics', 'nested - test', 'test']);
+  app.locals.dbManager.closeAll();
+});
+
+test('createApp discovers symlinked sqlite files from a directory', () => {
+  if (!symlinkDbPath) {
+    return;
+  }
+
+  const app = createApp({ directory: tmpDir });
+  const names = app.locals.dbManager.getDatabaseNames();
+
+  assert.ok(names.includes('linked-test'));
   app.locals.dbManager.closeAll();
 });
 
