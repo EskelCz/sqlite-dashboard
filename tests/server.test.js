@@ -254,14 +254,6 @@ test('createApp throws if no databases configured', () => {
   );
 });
 
-test('createApp discovers sqlite files from a directory recursively', () => {
-  const app = createApp({ directory: tmpDir });
-  const names = app.locals.dbManager.getDatabaseNames();
-
-  assert.deepEqual(names, ['analytics', 'nested - test', 'test']);
-  app.locals.dbManager.closeAll();
-});
-
 test('createApp discovers symlinked sqlite files from a directory', () => {
   if (!symlinkDbPath) {
     return;

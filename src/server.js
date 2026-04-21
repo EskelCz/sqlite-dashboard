@@ -54,7 +54,9 @@ function createServer(config) {
   const app = createApp(config);
 
   const server = app.listen(port, host, () => {
-    console.log(`SQLite Dashboard running at http://${host}:${port}`);
+    const dashboardUrl = `http://${host}:${port}`;
+    const clickableUrl = `\u001B]8;;${dashboardUrl}\u0007${dashboardUrl}\u001B]8;;\u0007`;
+    console.log(`SQLite Dashboard running at ${clickableUrl}`);
   });
 
   function close() {
