@@ -48,6 +48,9 @@ npx sqlite-dashboard --dir ./data
 
 # Custom port
 npx sqlite-dashboard --port 4000 ./app.db
+
+# Require a password before showing the dashboard
+SQLITE_DASHBOARD_PASSWORD="choose-a-password" npx sqlite-dashboard ./app.db
 ```
 
 ## API
@@ -65,6 +68,8 @@ Starts the HTTP server and returns `{ app, server, close }`.
 | `config.host`       | `string`                          | `'127.0.0.1'` | Bind address                        |
 
 You can pass `config.databases`, `config.directory`, or both. Files discovered from the directory are added automatically.
+
+Set `SQLITE_DASHBOARD_PASSWORD` in the server environment to require a password form before the dashboard and API are available.
 
 ### `createApp(config)`
 

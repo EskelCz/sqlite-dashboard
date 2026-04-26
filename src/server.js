@@ -1,11 +1,198 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const path = require('path');
 const { DatabaseManager } = require('./db');
 const { resolveDatabases } = require('./config');
 const databasesRouter = require('./api/databases');
 const tablesRouter = require('./api/tables');
+
+const AUTH_COOKIE_NAME = 'sqlite_dashboard_session';
+const PASSWORD_ENV_VAR = 'SQLITE_DASHBOARD_PASSWORD';
+
+/**
+ * @param {boolean} [hasError=false]
+ * @returns {string}
+ */
+function renderLoginPage(hasError = false) {
+  const errorMarkup = hasError
+    ? '<p class="error" role="alert">Incorrect password. Try again.</p>'
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQLite Dashboard Login</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #f9fafb;
+      color: #111827;
+      font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    main {
+      width: min(100% - 32px, 360px);
+      padding: 28px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.08);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    p {
+      margin: 0 0 20px;
+      color: #6b7280;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font: inherit;
+    }
+    input:focus {
+      border-color: #3ecf8e;
+      outline: 2px solid rgba(62,207,142,.18);
+      outline-offset: 0;
+    }
+    button {
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 6px;
+      background: #3ecf8e;
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+    }
+    button:hover { background: #2dbf7e; }
+    .error {
+      margin: 0 0 14px;
+      color: #b91c1c;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>SQLite Dashboard</h1>
+    <p>Enter the dashboard password to continue.</p>
+    ${errorMarkup}
+    <form method="post" action="/login">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>`;
+}
+
+/**
+ * @param {string | undefined} header
+ * @returns {Record<string, string>}
+ */
+function parseCookies(header) {
+  if (!header) return {};
+
+  return header.split(';').reduce((cookies, cookie) => {
+    const separatorIndex = cookie.indexOf('=');
+    if (separatorIndex === -1) return cookies;
+
+    const name = cookie.slice(0, separatorIndex).trim();
+    const value = cookie.slice(separatorIndex + 1).trim();
+    if (name) {
+      try {
+        cookies[name] = decodeURIComponent(value);
+      } catch {
+        cookies[name] = value;
+      }
+    }
+    return cookies;
+  }, {});
+}
+
+/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {boolean}
+ */
+function passwordsMatch(left, right) {
+  const leftHash = crypto.createHash('sha256').update(left).digest();
+  const rightHash = crypto.createHash('sha256').update(right).digest();
+  return crypto.timingSafeEqual(leftHash, rightHash);
+}
+
+/**
+ * @param {express.Application} app
+ * @param {string} password
+ */
+function addPasswordAuth(app, password) {
+  const sessions = new Set();
+  app.locals.authSessions = sessions;
+
+  app.use(express.urlencoded({ extended: false }));
+
+  app.get('/login', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    if (sessions.has(cookies[AUTH_COOKIE_NAME])) {
+      res.redirect('/');
+      return;
+    }
+
+    res.type('html').send(renderLoginPage());
+  });
+
+  app.post('/login', (req, res) => {
+    const submittedPassword = typeof req.body.password === 'string' ? req.body.password : '';
+    if (!passwordsMatch(submittedPassword, password)) {
+      res.status(401).type('html').send(renderLoginPage(true));
+      return;
+    }
+
+    const token = crypto.randomBytes(32).toString('base64url');
+    sessions.add(token);
+    res.cookie(AUTH_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: req.secure,
+    });
+    res.redirect('/');
+  });
+
+  app.use((req, res, next) => {
+    const cookies = parseCookies(req.headers.cookie);
+    if (sessions.has(cookies[AUTH_COOKIE_NAME])) {
+      next();
+      return;
+    }
+
+    if (req.path.startsWith('/api/')) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    res.redirect('/login');
+  });
+}
 
 /**
  * Creates an Express application for the SQLite dashboard.
@@ -28,6 +215,11 @@ function createApp(config) {
 
   // Store dbManager so routes can access it via req.app.locals
   app.locals.dbManager = dbManager;
+
+  const password = process.env[PASSWORD_ENV_VAR];
+  if (password) {
+    addPasswordAuth(app, password);
+  }
 
   // Serve static frontend files
   app.use(express.static(path.join(__dirname, 'public')));

@@ -68,13 +68,19 @@ after(() => {
 
 // ─── Helper: make a fetch-like request against the app ────────────────────────
 function makeRequest(app, method, url, body) {
+  return makeRequestWithHeaders(app, method, url, {}, body);
+}
+
+function makeRequestWithHeaders(app, method, url, headers = {}, body) {
   return new Promise((resolve, reject) => {
-    const server = app.listen(0, '127.0.0.1', () => {
+    const server = app.listen(0, '127.0.0.1');
+
+    server.once('listening', () => {
       const port = server.address().port;
       const fullUrl = `http://127.0.0.1:${port}${url}`;
       const options = {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...headers },
       };
       if (body !== undefined) options.body = JSON.stringify(body);
 
@@ -87,7 +93,33 @@ function makeRequest(app, method, url, body) {
         .catch(reject)
         .finally(() => server.close());
     });
-    server.on('error', reject);
+    server.once('error', reject);
+  });
+}
+
+function makeRawRequest(app, method, url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, '127.0.0.1');
+
+    server.once('listening', () => {
+      const port = server.address().port;
+      const fullUrl = `http://127.0.0.1:${port}${url}`;
+      const headers = options.headers || {};
+
+      fetch(fullUrl, {
+        method,
+        headers,
+        body: options.body,
+        redirect: 'manual',
+      })
+        .then(async (res) => {
+          const text = await res.text();
+          resolve({ status: res.status, headers: res.headers, text });
+        })
+        .catch(reject)
+        .finally(() => server.close());
+    });
+    server.once('error', reject);
   });
 }
 
@@ -97,6 +129,21 @@ function getApp() {
   });
 }
 
+function getPasswordApp(password = 'secret') {
+  const previousPassword = process.env.SQLITE_DASHBOARD_PASSWORD;
+  process.env.SQLITE_DASHBOARD_PASSWORD = password;
+
+  try {
+    return getApp();
+  } finally {
+    if (previousPassword === undefined) {
+      delete process.env.SQLITE_DASHBOARD_PASSWORD;
+    } else {
+      process.env.SQLITE_DASHBOARD_PASSWORD = previousPassword;
+    }
+  }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 test('GET /api/databases returns configured databases', async () => {
@@ -104,6 +151,67 @@ test('GET /api/databases returns configured databases', async () => {
   const { status, body } = await makeRequest(app, 'GET', '/api/databases');
   assert.equal(status, 200);
   assert.deepEqual(body.databases, ['testdb']);
+  app.locals.dbManager.closeAll();
+});
+
+test('password auth redirects browser requests to login', async () => {
+  const app = getPasswordApp();
+  const { status, headers } = await makeRawRequest(app, 'GET', '/');
+
+  assert.equal(status, 302);
+  assert.equal(headers.get('location'), '/login');
+  app.locals.dbManager.closeAll();
+});
+
+test('password auth shows a login form', async () => {
+  const app = getPasswordApp();
+  const { status, text } = await makeRawRequest(app, 'GET', '/login');
+
+  assert.equal(status, 200);
+  assert.match(text, /<form method="post" action="\/login">/);
+  assert.match(text, /name="password"/);
+  app.locals.dbManager.closeAll();
+});
+
+test('password auth rejects incorrect passwords', async () => {
+  const app = getPasswordApp();
+  const { status, text } = await makeRawRequest(app, 'POST', '/login', {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ password: 'wrong' }),
+  });
+
+  assert.equal(status, 401);
+  assert.match(text, /Incorrect password/);
+  app.locals.dbManager.closeAll();
+});
+
+test('password auth allows requests with a valid session cookie', async () => {
+  const app = getPasswordApp();
+  const login = await makeRawRequest(app, 'POST', '/login', {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ password: 'secret' }),
+  });
+  const cookie = login.headers.get('set-cookie');
+
+  assert.equal(login.status, 302);
+  assert.ok(cookie);
+  const sessionCookie = cookie.split(';')[0];
+
+  const { status, body } = await makeRequestWithHeaders(
+    app, 'GET', '/api/databases',
+    { Cookie: sessionCookie }
+  );
+  assert.equal(status, 200);
+  assert.deepEqual(body.databases, ['testdb']);
+  app.locals.dbManager.closeAll();
+});
+
+test('password auth returns 401 for unauthenticated API requests', async () => {
+  const app = getPasswordApp();
+  const { status, body } = await makeRequest(app, 'GET', '/api/databases');
+
+  assert.equal(status, 401);
+  assert.equal(body.error, 'Authentication required');
   app.locals.dbManager.closeAll();
 });
 
