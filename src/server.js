@@ -2,20 +2,51 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { DatabaseManager } = require('./db');
-const { resolveDatabases } = require('./config');
+const { resolveBasePath, resolveDatabases } = require('./config');
 const databasesRouter = require('./api/databases');
 const tablesRouter = require('./api/tables');
 
 const AUTH_COOKIE_NAME = 'sqlite_dashboard_session';
 const PASSWORD_ENV_VAR = 'SQLITE_DASHBOARD_PASSWORD';
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const INDEX_PATH = path.join(PUBLIC_DIR, 'index.html');
 
 /**
+ * @param {string} basePath
+ * @param {string} routePath
+ * @returns {string}
+ */
+function joinBasePath(basePath, routePath) {
+  if (!basePath) return routePath;
+  if (routePath === '/') return `${basePath}/`;
+  return `${basePath}${routePath.startsWith('/') ? routePath : `/${routePath}`}`;
+}
+
+/**
+ * @param {string} basePath
+ * @returns {string}
+ */
+function renderIndexPage(basePath) {
+  const configScript =
+    `<script>window.SQLITE_DASHBOARD_CONFIG = ${JSON.stringify({ basePath })};</script>`;
+
+  return fs.readFileSync(INDEX_PATH, 'utf8')
+    .replace('href="/css/app.css"', `href="${joinBasePath(basePath, '/css/app.css')}"`)
+    .replace(
+      '<script src="/js/app.js"></script>',
+      `${configScript}\n<script src="${joinBasePath(basePath, '/js/app.js')}"></script>`
+    );
+}
+
+/**
+ * @param {string} actionPath
  * @param {boolean} [hasError=false]
  * @returns {string}
  */
-function renderLoginPage(hasError = false) {
+function renderLoginPage(actionPath, hasError = false) {
   const errorMarkup = hasError
     ? '<p class="error" role="alert">Incorrect password. Try again.</p>'
     : '';
@@ -96,7 +127,7 @@ function renderLoginPage(hasError = false) {
     <h1>SQLite Dashboard</h1>
     <p>Enter the dashboard password to continue.</p>
     ${errorMarkup}
-    <form method="post" action="/login">
+    <form method="post" action="${actionPath}">
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
       <button type="submit">Sign in</button>
@@ -144,27 +175,31 @@ function passwordsMatch(left, right) {
 /**
  * @param {express.Application} app
  * @param {string} password
+ * @param {string} basePath
  */
-function addPasswordAuth(app, password) {
+function addPasswordAuth(app, password, basePath) {
   const sessions = new Set();
+  app.locals = app.locals || {};
   app.locals.authSessions = sessions;
+  const homePath = joinBasePath(basePath, '/');
+  const loginPath = joinBasePath(basePath, '/login');
 
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/login', (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     if (sessions.has(cookies[AUTH_COOKIE_NAME])) {
-      res.redirect('/');
+      res.redirect(homePath);
       return;
     }
 
-    res.type('html').send(renderLoginPage());
+    res.type('html').send(renderLoginPage(loginPath));
   });
 
   app.post('/login', (req, res) => {
     const submittedPassword = typeof req.body.password === 'string' ? req.body.password : '';
     if (!passwordsMatch(submittedPassword, password)) {
-      res.status(401).type('html').send(renderLoginPage(true));
+      res.status(401).type('html').send(renderLoginPage(loginPath, true));
       return;
     }
 
@@ -175,7 +210,7 @@ function addPasswordAuth(app, password) {
       sameSite: 'lax',
       secure: req.secure,
     });
-    res.redirect('/');
+    res.redirect(homePath);
   });
 
   app.use((req, res, next) => {
@@ -190,7 +225,7 @@ function addPasswordAuth(app, password) {
       return;
     }
 
-    res.redirect('/login');
+    res.redirect(loginPath);
   });
 }
 
@@ -198,10 +233,12 @@ function addPasswordAuth(app, password) {
  * Creates an Express application for the SQLite dashboard.
  * @param {Object} config
  * @param {Array<{name: string, path: string}>} config.databases
+ * @param {string} [config.basePath]
  * @returns {import('express').Application}
  */
 function createApp(config) {
   const databases = resolveDatabases(config);
+  const basePath = resolveBasePath(config);
   if (!Array.isArray(databases) || databases.length === 0) {
     throw new Error(
       'config.databases must be a non-empty array of {name, path} objects or config.directory must contain SQLite files'
@@ -211,22 +248,37 @@ function createApp(config) {
   const dbManager = new DatabaseManager(databases);
 
   const app = express();
-  app.use(express.json());
+  const router = express.Router();
+  router.use(express.json());
 
   // Store dbManager so routes can access it via req.app.locals
   app.locals.dbManager = dbManager;
+  app.locals.basePath = basePath;
 
   const password = process.env[PASSWORD_ENV_VAR];
   if (password) {
-    addPasswordAuth(app, password);
+    addPasswordAuth(router, password, basePath);
   }
 
+  router.get(['/', '/index.html'], (req, res) => {
+    res.type('html').send(renderIndexPage(basePath));
+  });
+
   // Serve static frontend files
-  app.use(express.static(path.join(__dirname, 'public')));
+  router.use(express.static(PUBLIC_DIR, { index: false }));
 
   // API routes
-  app.use('/api/databases', databasesRouter);
-  app.use('/api/databases/:dbName', tablesRouter);
+  router.use('/api/databases', databasesRouter);
+  router.use('/api/databases/:dbName', tablesRouter);
+
+  if (basePath) {
+    app.get('/', (req, res) => {
+      res.redirect(joinBasePath(basePath, '/'));
+    });
+    app.use(basePath, router);
+  } else {
+    app.use(router);
+  }
 
   return app;
 }
@@ -235,6 +287,7 @@ function createApp(config) {
  * Creates and starts the SQLite dashboard server.
  * @param {Object} config
  * @param {Array<{name: string, path: string}>} config.databases
+ * @param {string} [config.basePath]
  * @param {number} [config.port=3000]
  * @param {string} [config.host='127.0.0.1']
  * @returns {{ app, server, close() }}
@@ -246,7 +299,8 @@ function createServer(config) {
   const app = createApp(config);
 
   const server = app.listen(port, host, () => {
-    const dashboardUrl = `http://${host}:${port}`;
+    const basePath = app.locals.basePath || '';
+    const dashboardUrl = `http://${host}:${port}${basePath}`;
     const clickableUrl = `\u001B]8;;${dashboardUrl}\u0007${dashboardUrl}\u001B]8;;\u0007`;
     console.log(`SQLite Dashboard running at ${clickableUrl}`);
   });

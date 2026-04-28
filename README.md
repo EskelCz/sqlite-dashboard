@@ -29,6 +29,7 @@ const { createDashboard } = require('sqlite-dashboard');
 
 createDashboard({
   directory: './data',
+  basePath: '/sqlite-dashboard', // optional, for reverse-proxy subpaths
   port: 3000,           // optional, default 3000
   host: '127.0.0.1',   // optional, default 127.0.0.1 (localhost only)
 });
@@ -51,6 +52,9 @@ npx sqlite-dashboard --port 4000 ./app.db
 
 # Require a password before showing the dashboard
 SQLITE_DASHBOARD_PASSWORD="choose-a-password" npx sqlite-dashboard ./app.db
+
+# Serve the dashboard under a URL prefix
+SQLITE_DASHBOARD_BASE_PATH="/sqlite-dashboard" npx sqlite-dashboard ./app.db
 ```
 
 ## API
@@ -64,12 +68,14 @@ Starts the HTTP server and returns `{ app, server, close }`.
 | `config.databases`  | `Array<{name: string, path: string}>` | **required** | SQLite files to expose             |
 | `config.directory`  | `string`                          |               | Folder to scan recursively for `.db` and `.sqlite` files |
 | `config.folder`     | `string`                          |               | Alias for `config.directory`       |
+| `config.basePath`   | `string`                          |               | URL path prefix for assets, API routes, and login |
 | `config.port`       | `number`                          | `3000`        | Port to listen on                   |
 | `config.host`       | `string`                          | `'127.0.0.1'` | Bind address                        |
 
 You can pass `config.databases`, `config.directory`, or both. Files discovered from the directory are added automatically.
 
 Set `SQLITE_DASHBOARD_PASSWORD` in the server environment to require a password form before the dashboard and API are available.
+Set `SQLITE_DASHBOARD_BASE_PATH` (or `BASE_PATH`) in the server environment to serve the dashboard under a prefixed path such as `/sqlite-dashboard`.
 
 ### `createApp(config)`
 

@@ -32,8 +32,22 @@ const state = {
 };
 
 // ─── API helpers ───────────────────────────────────────────────────────────────
+function normalizeBasePath(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw || raw === '/') return '';
+  return '/' + raw.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+const dashboardConfig = window.SQLITE_DASHBOARD_CONFIG || {};
+const basePath = normalizeBasePath(dashboardConfig.basePath);
+
+function withBasePath(url) {
+  if (!basePath) return url;
+  return `${basePath}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
 async function apiFetch(url, options = {}) {
-  const res = await fetch(url, {
+  const res = await fetch(withBasePath(url), {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });

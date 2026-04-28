@@ -123,18 +123,19 @@ function makeRawRequest(app, method, url, options = {}) {
   });
 }
 
-function getApp() {
+function getApp(config = {}) {
   return createApp({
     databases: [{ name: 'testdb', path: dbPath }],
+    ...config,
   });
 }
 
-function getPasswordApp(password = 'secret') {
+function getPasswordApp(password = 'secret', config = {}) {
   const previousPassword = process.env.SQLITE_DASHBOARD_PASSWORD;
   process.env.SQLITE_DASHBOARD_PASSWORD = password;
 
   try {
-    return getApp();
+    return getApp(config);
   } finally {
     if (previousPassword === undefined) {
       delete process.env.SQLITE_DASHBOARD_PASSWORD;
@@ -149,6 +150,43 @@ function getPasswordApp(password = 'secret') {
 test('GET /api/databases returns configured databases', async () => {
   const app = getApp();
   const { status, body } = await makeRequest(app, 'GET', '/api/databases');
+  assert.equal(status, 200);
+  assert.deepEqual(body.databases, ['testdb']);
+  app.locals.dbManager.closeAll();
+});
+
+test('basePath prefixes index assets and API routes', async () => {
+  const app = getApp({ basePath: '/dashboard/' });
+  const page = await makeRawRequest(app, 'GET', '/dashboard/');
+
+  assert.equal(page.status, 200);
+  assert.match(page.text, /href="\/dashboard\/css\/app\.css"/);
+  assert.match(page.text, /src="\/dashboard\/js\/app\.js"/);
+  assert.match(page.text, /"basePath":"\/dashboard"/);
+
+  const indexPage = await makeRawRequest(app, 'GET', '/dashboard/index.html');
+  assert.equal(indexPage.status, 200);
+  assert.match(indexPage.text, /src="\/dashboard\/js\/app\.js"/);
+
+  const { status, body } = await makeRequest(app, 'GET', '/dashboard/api/databases');
+  assert.equal(status, 200);
+  assert.deepEqual(body.databases, ['testdb']);
+  app.locals.dbManager.closeAll();
+});
+
+test('basePath can be read from environment configuration', async () => {
+  const previousBasePath = process.env.SQLITE_DASHBOARD_BASE_PATH;
+  process.env.SQLITE_DASHBOARD_BASE_PATH = '/env-dashboard';
+
+  const app = getApp();
+
+  if (previousBasePath === undefined) {
+    delete process.env.SQLITE_DASHBOARD_BASE_PATH;
+  } else {
+    process.env.SQLITE_DASHBOARD_BASE_PATH = previousBasePath;
+  }
+
+  const { status, body } = await makeRequest(app, 'GET', '/env-dashboard/api/databases');
   assert.equal(status, 200);
   assert.deepEqual(body.databases, ['testdb']);
   app.locals.dbManager.closeAll();
@@ -170,6 +208,26 @@ test('password auth shows a login form', async () => {
   assert.equal(status, 200);
   assert.match(text, /<form method="post" action="\/login">/);
   assert.match(text, /name="password"/);
+  app.locals.dbManager.closeAll();
+});
+
+test('password auth uses basePath-prefixed login routes', async () => {
+  const app = getPasswordApp('secret', { basePath: '/dashboard' });
+  const redirect = await makeRawRequest(app, 'GET', '/dashboard/');
+
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.get('location'), '/dashboard/login');
+
+  const page = await makeRawRequest(app, 'GET', '/dashboard/login');
+  assert.equal(page.status, 200);
+  assert.match(page.text, /<form method="post" action="\/dashboard\/login">/);
+
+  const login = await makeRawRequest(app, 'POST', '/dashboard/login', {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ password: 'secret' }),
+  });
+  assert.equal(login.status, 302);
+  assert.equal(login.headers.get('location'), '/dashboard/');
   app.locals.dbManager.closeAll();
 });
 

@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const SQLITE_FILE_PATTERN = /\.(db|sqlite)$/i;
+const BASE_PATH_ENV_VAR = 'SQLITE_DASHBOARD_BASE_PATH';
+const BASE_PATH_FALLBACK_ENV_VAR = 'BASE_PATH';
 
 /**
  * @param {string} directoryPath
@@ -157,4 +159,34 @@ function resolveDatabases(config = {}) {
   return databases
 }
 
-module.exports = { findSqliteFiles, resolveDatabases }
+/**
+ * @param {string | undefined} value
+ * @returns {string}
+ */
+function normalizeBasePath(value) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw === '/') {
+    return ''
+  }
+  if (raw.includes('?') || raw.includes('#')) {
+    throw new Error('basePath must be a URL path without query string or hash')
+  }
+
+  const pathOnly = raw.replace(/^\/+/, '').replace(/\/+$/, '')
+  return pathOnly ? `/${pathOnly}` : ''
+}
+
+/**
+ * @param {Object} config
+ * @param {string} [config.basePath]
+ * @returns {string}
+ */
+function resolveBasePath(config = {}) {
+  const configBasePath = typeof config.basePath === 'string' ? config.basePath : ''
+  const envBasePath =
+    process.env[BASE_PATH_ENV_VAR] || process.env[BASE_PATH_FALLBACK_ENV_VAR] || ''
+
+  return normalizeBasePath(configBasePath || envBasePath)
+}
+
+module.exports = { findSqliteFiles, normalizeBasePath, resolveBasePath, resolveDatabases }

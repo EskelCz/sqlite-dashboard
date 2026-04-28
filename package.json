@@ -1,10 +1,14 @@
 {
   "name": "sqlite-dashboard",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Web based sqlite viewer and editor for self-hosting",
   "main": "src/index.js",
   "bin": {
     "sqlite-dashboard": "bin/sqlite-dashboard.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EskelCz/sqlite-dashboard.git"
   },
   "scripts": {
     "start": "node bin/sqlite-dashboard.js",
