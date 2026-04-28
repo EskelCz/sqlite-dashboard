@@ -1,6 +1,6 @@
 {
   "name": "sqlite-dashboard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Web based sqlite viewer and editor for self-hosting",
   "main": "src/index.js",
   "bin": {
