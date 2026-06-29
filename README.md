@@ -4,6 +4,8 @@ Web-based SQLite viewer and editor for self-hosting, loosely modeled after the S
 
 Projects can install this library, point it at one or more SQLite files, and immediately get a browser UI for viewing and editing database contents.
 
+<img width="1470" height="831" alt="image" src="https://github.com/user-attachments/assets/59ae352e-a1d9-4755-9b10-09ce9fc32ad1" />
+
 ## Features
 
 - **Multi-database support** – configure any number of SQLite files
